@@ -1,7 +1,9 @@
 # BOIDS
 
 
-I saw some birds flocking at the beach on 2026-02-20.   This is the result via Codex 5.3.  I retained the [PROMPTS.md](prompts-as-truth)
+I saw some birds flocking at the beach on 2026-02-20.   This is the result via Codex 5.3.  
+
+I retained the [prompts-as-truth](PROMPTS).
 
 ## Run Locally (Simple Web Server)
 

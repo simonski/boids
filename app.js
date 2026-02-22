@@ -5,6 +5,9 @@ const MIN_WORLD_SIZE = 100;
 const MAX_WORLD_SIZE = 10000;
 const TARGET_FPS_DELTA = 1 / 60;
 const STORAGE_KEY = "boids-sandbox-settings-v1";
+const SHARE_PARAM = "s";
+const SHARE_STATE_VERSION = 1;
+const SHARE_STATE_BYTES = 37;
 const MAX_BIRDS = 5000;
 const MAX_HAWKS = 100;
 
@@ -46,6 +49,7 @@ const birdSizeSlider = document.getElementById("birdSizeSlider");
 const birdSizeValue = document.getElementById("birdSizeValue");
 const hawkCountSlider = document.getElementById("hawkCountSlider");
 const hawkCountValue = document.getElementById("hawkCountValue");
+const shareLink = document.getElementById("shareLink");
 
 const HOVER_COLLAPSE_DELAY_MS = 900;
 let collapseTimerId = null;
@@ -124,6 +128,7 @@ const cameraControl = {
 
 const autoOrbit = {
   enabled: false,
+  forcedByUser: false,
   idleDelayMs: 3500,
   angularSpeed: 0.14,
   angle: Math.atan2(camera.position.z, camera.position.x),
@@ -152,6 +157,7 @@ function updateCameraRotation() {
 
 function noteCameraInput() {
   lastCameraInputMs = performance.now();
+  if (autoOrbit.forcedByUser) return;
   if (!autoOrbit.enabled) return;
   autoOrbit.enabled = false;
   syncAnglesFromCamera();
@@ -204,6 +210,21 @@ function setMovementKey(code, pressed) {
 
 document.addEventListener("keydown", (event) => {
   if (event.repeat) return;
+  if (event.code === "Space") {
+    event.preventDefault();
+    autoOrbit.forcedByUser = !autoOrbit.forcedByUser;
+    if (autoOrbit.forcedByUser) {
+      autoOrbit.enabled = true;
+      autoOrbit.radius = Math.max(1, Math.hypot(camera.position.x, camera.position.z));
+      autoOrbit.height = camera.position.y;
+      autoOrbit.angle = Math.atan2(camera.position.z, camera.position.x);
+    } else {
+      autoOrbit.enabled = false;
+      syncAnglesFromCamera();
+      lastCameraInputMs = performance.now();
+    }
+    return;
+  }
   if (setMovementKey(event.code, true)) noteCameraInput();
 });
 
@@ -274,6 +295,154 @@ const box = new THREE.Box3(
 );
 const boxHelper = new THREE.Box3Helper(box, 0x4c6d93);
 scene.add(boxHelper);
+
+let lastSerializedStateHex = "";
+
+function clampInteger(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function clampFinite(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function bytesToHex(bytes) {
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+function hexToBytes(hex) {
+  if (!hex || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) return null;
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function encodeSceneStateToHex() {
+  const bytes = new Uint8Array(SHARE_STATE_BYTES);
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+
+  view.setUint8(offset, SHARE_STATE_VERSION);
+  offset += 1;
+
+  view.setUint16(offset, clampInteger(settings.boidCount, 10, MAX_BIRDS, 150), true);
+  offset += 2;
+  view.setUint16(offset, clampInteger(settings.sandboxSize, MIN_WORLD_SIZE, MAX_WORLD_SIZE, 1000), true);
+  offset += 2;
+  view.setUint16(
+    offset,
+    clampInteger(Math.round(settings.birdSizeMultiplier * 100), 50, 300, 100),
+    true
+  );
+  offset += 2;
+  view.setUint16(offset, clampInteger(settings.hawkCount, 0, MAX_HAWKS, 0), true);
+  offset += 2;
+
+  view.setFloat32(offset, camera.position.x, true);
+  offset += 4;
+  view.setFloat32(offset, camera.position.y, true);
+  offset += 4;
+  view.setFloat32(offset, camera.position.z, true);
+  offset += 4;
+  view.setFloat32(offset, camera.quaternion.x, true);
+  offset += 4;
+  view.setFloat32(offset, camera.quaternion.y, true);
+  offset += 4;
+  view.setFloat32(offset, camera.quaternion.z, true);
+  offset += 4;
+  view.setFloat32(offset, camera.quaternion.w, true);
+
+  return bytesToHex(bytes);
+}
+
+function decodeSceneStateFromHex(hex) {
+  const bytes = hexToBytes(hex);
+  if (!bytes || bytes.length !== SHARE_STATE_BYTES) return null;
+
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+  const version = view.getUint8(offset);
+  offset += 1;
+  if (version !== SHARE_STATE_VERSION) return null;
+
+  const parsed = {
+    boidCount: view.getUint16(offset, true),
+    sandboxSize: view.getUint16(offset + 2, true),
+    birdSizePercent: view.getUint16(offset + 4, true),
+    hawkCount: view.getUint16(offset + 6, true),
+    cameraX: view.getFloat32(offset + 8, true),
+    cameraY: view.getFloat32(offset + 12, true),
+    cameraZ: view.getFloat32(offset + 16, true),
+    quatX: view.getFloat32(offset + 20, true),
+    quatY: view.getFloat32(offset + 24, true),
+    quatZ: view.getFloat32(offset + 28, true),
+    quatW: view.getFloat32(offset + 32, true),
+  };
+
+  const quaternionLengthSq =
+    parsed.quatX * parsed.quatX +
+    parsed.quatY * parsed.quatY +
+    parsed.quatZ * parsed.quatZ +
+    parsed.quatW * parsed.quatW;
+
+  if (!Number.isFinite(quaternionLengthSq) || quaternionLengthSq < 1e-8) {
+    return null;
+  }
+
+  return {
+    boidCount: clampInteger(parsed.boidCount, 10, MAX_BIRDS, settings.boidCount),
+    sandboxSize: clampInteger(parsed.sandboxSize, MIN_WORLD_SIZE, MAX_WORLD_SIZE, settings.sandboxSize),
+    birdSizePercent: clampInteger(parsed.birdSizePercent, 50, 300, 100),
+    hawkCount: clampInteger(parsed.hawkCount, 0, MAX_HAWKS, settings.hawkCount),
+    cameraX: clampFinite(parsed.cameraX, -500000, 500000, camera.position.x),
+    cameraY: clampFinite(parsed.cameraY, -500000, 500000, camera.position.y),
+    cameraZ: clampFinite(parsed.cameraZ, -500000, 500000, camera.position.z),
+    quatX: parsed.quatX,
+    quatY: parsed.quatY,
+    quatZ: parsed.quatZ,
+    quatW: parsed.quatW,
+  };
+}
+
+function loadSharedStateFromUrl() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hex = searchParams.get(SHARE_PARAM);
+  if (!hex) return null;
+  return decodeSceneStateFromHex(hex.trim());
+}
+
+function applySharedCameraState(sharedState) {
+  camera.position.set(sharedState.cameraX, sharedState.cameraY, sharedState.cameraZ);
+  camera.quaternion.set(sharedState.quatX, sharedState.quatY, sharedState.quatZ, sharedState.quatW).normalize();
+  syncAnglesFromCamera();
+  autoOrbit.enabled = false;
+  lastCameraInputMs = performance.now();
+}
+
+function updateShareLink() {
+  if (!shareLink) return;
+
+  const stateHex = encodeSceneStateToHex();
+  const textNeedsInit = shareLink.textContent !== "share";
+  if (stateHex === lastSerializedStateHex && !textNeedsInit) return;
+  lastSerializedStateHex = stateHex;
+
+  const shareUrl = new URL(window.location.href);
+  shareUrl.searchParams.set(SHARE_PARAM, stateHex);
+  const fullUrl = shareUrl.toString();
+
+  shareLink.href = fullUrl;
+  shareLink.textContent = "share";
+  history.replaceState(null, "", shareUrl);
+}
 
 function loadPersistedSettings() {
   try {
@@ -871,10 +1040,27 @@ hawkCountSlider.addEventListener("change", () => {
 });
 
 const persisted = loadPersistedSettings();
-const initialBoidCount = Number.isFinite(persisted?.boidCount) ? persisted.boidCount : settings.boidCount;
-const initialSandboxSize = Number.isFinite(persisted?.sandboxSize) ? persisted.sandboxSize : settings.sandboxSize;
-const initialBirdSizePercent = Number.isFinite(persisted?.birdSizePercent) ? persisted.birdSizePercent : 100;
-const initialHawkCount = Number.isFinite(persisted?.hawkCount) ? persisted.hawkCount : settings.hawkCount;
+const sharedState = loadSharedStateFromUrl();
+const initialBoidCount = Number.isFinite(sharedState?.boidCount)
+  ? sharedState.boidCount
+  : Number.isFinite(persisted?.boidCount)
+    ? persisted.boidCount
+    : settings.boidCount;
+const initialSandboxSize = Number.isFinite(sharedState?.sandboxSize)
+  ? sharedState.sandboxSize
+  : Number.isFinite(persisted?.sandboxSize)
+    ? persisted.sandboxSize
+    : settings.sandboxSize;
+const initialBirdSizePercent = Number.isFinite(sharedState?.birdSizePercent)
+  ? sharedState.birdSizePercent
+  : Number.isFinite(persisted?.birdSizePercent)
+    ? persisted.birdSizePercent
+    : 100;
+const initialHawkCount = Number.isFinite(sharedState?.hawkCount)
+  ? sharedState.hawkCount
+  : Number.isFinite(persisted?.hawkCount)
+    ? persisted.hawkCount
+    : settings.hawkCount;
 
 countSlider.value = String(Math.max(10, Math.min(MAX_BIRDS, Math.round(initialBoidCount))));
 sandboxSlider.value = String(Math.max(MIN_WORLD_SIZE, Math.min(MAX_WORLD_SIZE, Math.round(initialSandboxSize))));
@@ -886,6 +1072,8 @@ setBirdSize(Number(birdSizeSlider.value));
 setSandboxSize(Number(sandboxSlider.value));
 setBoidCount(Number(countSlider.value));
 setHawkCount(Number(hawkCountSlider.value));
+if (sharedState) applySharedCameraState(sharedState);
+updateShareLink();
 
 const clock = new THREE.Clock();
 let simulationTime = 0;
@@ -902,8 +1090,9 @@ function animate() {
   const nowMs = performance.now();
   const hasMoveInput = moveState.forward || moveState.backward || moveState.left || moveState.right;
   const idleTooLong = nowMs - lastCameraInputMs > autoOrbit.idleDelayMs;
+  const shouldOrbit = autoOrbit.forcedByUser || (idleTooLong && !hasMoveInput);
 
-  if (idleTooLong && !hasMoveInput) {
+  if (shouldOrbit) {
     if (!autoOrbit.enabled) {
       autoOrbit.enabled = true;
       autoOrbit.radius = Math.max(1, Math.hypot(camera.position.x, camera.position.z));
@@ -916,6 +1105,7 @@ function animate() {
     if (moved) noteCameraInput();
   }
 
+  updateShareLink();
   renderer.render(scene, camera);
 }
 

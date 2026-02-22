@@ -107,6 +107,31 @@
       transform: translateY(0);
       pointer-events: auto;
     }
+
+    #shareWrap {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      z-index: 10;
+      max-width: min(72vw, 760px);
+      padding: 10px 12px;
+      background: rgba(12, 17, 24, 0.72);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    #shareLink {
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    #shareLink:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -135,8 +160,11 @@
       </div>
       <input id="hawkCountSlider" type="range" min="0" max="100" step="1" value="0" />
       <p class="hint">Sandbox range: 100m to 10,000m per side (up to a 10 km cube). Birds are contained within bounds.</p>
-      <p class="hint">Camera: click scene to free-look, WASD to move, Shift = 2x speed, Esc to unlock. Idle camera auto-orbits.</p>
+      <p class="hint">Camera: click scene to free-look, WASD to move, Shift = 2x speed, Esc to unlock, Space toggles orbit. Idle camera auto-orbits.</p>
       </div>
+    </div>
+    <div id="shareWrap">
+      <a id="shareLink" href="#" rel="noopener">share</a>
     </div>
   </div>
   <script type="importmap">
