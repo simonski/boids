@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js Boids Sandbox</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <style>
+    :root {
+      --panel-bg: rgba(12, 17, 24, 0.72);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --text: #f4f7fb;
+      --accent: #6dd3ff;
+      --muted: #9fb2c8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 20%, #1d2d44 0%, #0a0f16 60%, #06080d 100%);
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #ui {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      backdrop-filter: blur(10px);
+      width: 60px;
+      overflow: hidden;
+      transition: width 660ms ease-in, padding 660ms ease-in;
+    }
+
+    #ui.expanded {
+      width: 240px;
+    }
+
+    #ui h1 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .control-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    #countValue {
+      color: var(--accent);
+      font-weight: 600;
+      min-width: 2ch;
+      text-align: right;
+    }
+
+    #countSlider {
+      width: 100%;
+      accent-color: var(--accent);
+      margin: 4px 0 8px;
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    #uiContent {
+      max-height: 0;
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: max-height 780ms ease-in, opacity 540ms ease-in, transform 780ms ease-in;
+    }
+
+    #ui.expanded #uiContent {
+      max-height: 420px;
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="ui">
+      <h1>Boids Simulation</h1>
+      <div id="uiContent">
+      <div class="control-row">
+        <label for="countSlider">Birds</label>
+        <span id="countValue">150</span>
+      </div>
+      <input id="countSlider" type="range" min="10" max="5000" step="1" value="150" />
+      <div class="control-row">
+        <label for="sandboxSlider">Sandbox Size</label>
+        <span id="sandboxValue">1000 m</span>
+      </div>
+      <input id="sandboxSlider" type="range" min="100" max="10000" step="100" value="1000" />
+      <div class="control-row">
+        <label for="birdSizeSlider">Bird Size</label>
+        <span id="birdSizeValue">100%</span>
+      </div>
+      <input id="birdSizeSlider" type="range" min="50" max="300" step="1" value="100" />
+      <div class="control-row">
+        <label for="hawkCountSlider">Hawks</label>
+        <span id="hawkCountValue">0</span>
+      </div>
+      <input id="hawkCountSlider" type="range" min="0" max="100" step="1" value="0" />
+      <p class="hint">Sandbox range: 100m to 10,000m per side (up to a 10 km cube). Birds are contained within bounds.</p>
+      <p class="hint">Camera: click scene to free-look, WASD to move, Shift = 2x speed, Esc to unlock. Idle camera auto-orbits.</p>
+      </div>
+    </div>
+  </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
