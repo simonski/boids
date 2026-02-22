@@ -50,6 +50,7 @@ const birdSizeValue = document.getElementById("birdSizeValue");
 const hawkCountSlider = document.getElementById("hawkCountSlider");
 const hawkCountValue = document.getElementById("hawkCountValue");
 const shareLink = document.getElementById("shareLink");
+const copyToast = document.getElementById("copyToast");
 
 const HOVER_COLLAPSE_DELAY_MS = 900;
 let collapseTimerId = null;
@@ -99,7 +100,7 @@ uiTitle.addEventListener("dblclick", () => {
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x050910, 500, 2000);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000);
 camera.position.set(700, 480, 700);
 camera.lookAt(0, 0, 0);
 
@@ -143,6 +144,80 @@ const cameraEuler = new THREE.Euler(0, 0, 0, "YXZ");
 const forwardVec = new THREE.Vector3();
 const rightVec = new THREE.Vector3();
 const moveVec = new THREE.Vector3();
+const twoDTargetPosition = new THREE.Vector3();
+const twoDTargetQuaternion = new THREE.Quaternion();
+
+const viewMode = {
+  current: "3d",
+  transitioning: false,
+  target: "3d",
+  durationSeconds: 0.9,
+  elapsedSeconds: 0,
+  startPosition: new THREE.Vector3(),
+  startQuaternion: new THREE.Quaternion(),
+  endPosition: new THREE.Vector3(),
+  endQuaternion: new THREE.Quaternion(),
+  saved3DPosition: camera.position.clone(),
+  saved3DQuaternion: camera.quaternion.clone(),
+};
+
+function clearMovementState() {
+  moveState.forward = false;
+  moveState.backward = false;
+  moveState.left = false;
+  moveState.right = false;
+  moveState.sprint = false;
+}
+
+function compute2DViewPose(positionOut, quaternionOut) {
+  const halfWorld = settings.sandboxSize * 0.5;
+  const fovRadians = THREE.MathUtils.degToRad(camera.fov);
+  const tanHalfFov = Math.tan(fovRadians * 0.5);
+  const aspect = Math.max(camera.aspect, 1e-4);
+  const distanceByHeight = halfWorld / tanHalfFov;
+  const distanceByWidth = halfWorld / (tanHalfFov * aspect);
+  const requiredDistance = Math.max(distanceByHeight, distanceByWidth) + halfWorld + 20;
+
+  positionOut.set(0, 0, requiredDistance);
+  quaternionOut.identity();
+}
+
+function beginViewTransition(nextMode) {
+  viewMode.transitioning = true;
+  viewMode.target = nextMode;
+  viewMode.elapsedSeconds = 0;
+  viewMode.startPosition.copy(camera.position);
+  viewMode.startQuaternion.copy(camera.quaternion);
+
+  if (nextMode === "2d") {
+    compute2DViewPose(viewMode.endPosition, viewMode.endQuaternion);
+  } else {
+    viewMode.endPosition.copy(viewMode.saved3DPosition);
+    viewMode.endQuaternion.copy(viewMode.saved3DQuaternion);
+  }
+}
+
+function updateViewTransition(deltaSeconds) {
+  if (!viewMode.transitioning) return false;
+  viewMode.elapsedSeconds += deltaSeconds;
+  const linearT = Math.min(1, viewMode.elapsedSeconds / viewMode.durationSeconds);
+  const easedT = linearT < 0.5 ? 4 * linearT * linearT * linearT : 1 - Math.pow(-2 * linearT + 2, 3) / 2;
+
+  camera.position.lerpVectors(viewMode.startPosition, viewMode.endPosition, easedT);
+  camera.quaternion.slerpQuaternions(viewMode.startQuaternion, viewMode.endQuaternion, easedT);
+
+  if (linearT >= 1) {
+    viewMode.transitioning = false;
+    viewMode.current = viewMode.target;
+    syncAnglesFromCamera();
+    return true;
+  }
+  return false;
+}
+
+function isInInteractive3DMode() {
+  return viewMode.current === "3d" && !viewMode.transitioning;
+}
 
 function syncAnglesFromCamera() {
   cameraEuler.setFromQuaternion(camera.quaternion, "YXZ");
@@ -156,6 +231,7 @@ function updateCameraRotation() {
 }
 
 function noteCameraInput() {
+  if (!isInInteractive3DMode()) return;
   lastCameraInputMs = performance.now();
   if (autoOrbit.forcedByUser) return;
   if (!autoOrbit.enabled) return;
@@ -166,17 +242,24 @@ function noteCameraInput() {
 syncAnglesFromCamera();
 
 renderer.domElement.addEventListener("click", () => {
+  if (!isInInteractive3DMode()) return;
   renderer.domElement.requestPointerLock();
   noteCameraInput();
 });
 
 document.addEventListener("pointerlockchange", () => {
   cameraControl.active = document.pointerLockElement === renderer.domElement;
+  if (!isInInteractive3DMode() && cameraControl.active) {
+    document.exitPointerLock();
+    cameraControl.active = false;
+    return;
+  }
   if (cameraControl.active) noteCameraInput();
 });
 
 document.addEventListener("mousemove", (event) => {
   if (!cameraControl.active) return;
+  if (!isInInteractive3DMode()) return;
   noteCameraInput();
   cameraControl.yaw -= event.movementX * cameraControl.lookSensitivity;
   cameraControl.pitch -= event.movementY * cameraControl.lookSensitivity;
@@ -210,7 +293,28 @@ function setMovementKey(code, pressed) {
 
 document.addEventListener("keydown", (event) => {
   if (event.repeat) return;
+  if (event.code === "KeyV") {
+    event.preventDefault();
+    if (viewMode.transitioning) return;
+
+    clearMovementState();
+    autoOrbit.enabled = false;
+    autoOrbit.forcedByUser = false;
+    if (cameraControl.active) document.exitPointerLock();
+
+    if (viewMode.current === "3d") {
+      viewMode.saved3DPosition.copy(camera.position);
+      viewMode.saved3DQuaternion.copy(camera.quaternion);
+      beginViewTransition("2d");
+    } else {
+      beginViewTransition("3d");
+      lastCameraInputMs = performance.now();
+    }
+    return;
+  }
+
   if (event.code === "Space") {
+    if (!isInInteractive3DMode()) return;
     event.preventDefault();
     autoOrbit.forcedByUser = !autoOrbit.forcedByUser;
     if (autoOrbit.forcedByUser) {
@@ -225,10 +329,12 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (!isInInteractive3DMode()) return;
   if (setMovementKey(event.code, true)) noteCameraInput();
 });
 
 document.addEventListener("keyup", (event) => {
+  if (!isInInteractive3DMode()) return;
   if (setMovementKey(event.code, false)) noteCameraInput();
 });
 
@@ -298,6 +404,41 @@ scene.add(boxHelper);
 
 let lastSerializedStateHex = "";
 let lastShareUrl = "";
+let copyToastTimerId = null;
+
+function showCopyToast(message) {
+  if (!copyToast) return;
+  copyToast.textContent = message;
+  copyToast.classList.add("visible");
+  if (copyToastTimerId !== null) clearTimeout(copyToastTimerId);
+  copyToastTimerId = setTimeout(() => {
+    copyToast.classList.remove("visible");
+    copyToastTimerId = null;
+  }, 1400);
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall back to legacy copy path.
+    }
+  }
+
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.setAttribute("readonly", "");
+  input.style.position = "absolute";
+  input.style.left = "-9999px";
+  document.body.appendChild(input);
+  input.select();
+  input.setSelectionRange(0, input.value.length);
+  const copied = document.execCommand("copy");
+  document.body.removeChild(input);
+  return copied;
+}
 
 function clampInteger(value, min, max, fallback) {
   if (!Number.isFinite(value)) return fallback;
@@ -449,9 +590,10 @@ shareLink?.addEventListener("click", async (event) => {
   event.preventDefault();
   if (!lastShareUrl) return;
 
-  try {
-    await navigator.clipboard.writeText(lastShareUrl);
-  } catch {
+  const copied = await copyTextToClipboard(lastShareUrl);
+  if (copied) {
+    showCopyToast("share link copied to clipboard");
+  } else {
     window.prompt("Copy share URL:", lastShareUrl);
   }
 });
@@ -1099,22 +1241,36 @@ function animate() {
   updateBoids(deltaSeconds, simulationTime);
   updateHawk(deltaSeconds);
 
-  const nowMs = performance.now();
-  const hasMoveInput = moveState.forward || moveState.backward || moveState.left || moveState.right;
-  const idleTooLong = nowMs - lastCameraInputMs > autoOrbit.idleDelayMs;
-  const shouldOrbit = autoOrbit.forcedByUser || (idleTooLong && !hasMoveInput);
-
-  if (shouldOrbit) {
-    if (!autoOrbit.enabled) {
-      autoOrbit.enabled = true;
-      autoOrbit.radius = Math.max(1, Math.hypot(camera.position.x, camera.position.z));
-      autoOrbit.height = camera.position.y;
-      autoOrbit.angle = Math.atan2(camera.position.z, camera.position.x);
+  if (viewMode.transitioning) {
+    const finished = updateViewTransition(deltaSeconds);
+    if (finished && viewMode.current === "2d") {
+      autoOrbit.enabled = false;
+      autoOrbit.forcedByUser = false;
+      clearMovementState();
     }
-    updateAutoOrbitCamera(deltaSeconds);
+  } else if (viewMode.current === "2d") {
+    compute2DViewPose(twoDTargetPosition, twoDTargetQuaternion);
+    const blend = 1 - Math.exp(-deltaSeconds * 8);
+    camera.position.lerp(twoDTargetPosition, blend);
+    camera.quaternion.slerp(twoDTargetQuaternion, blend);
   } else {
-    const moved = updateCameraPosition(deltaSeconds);
-    if (moved) noteCameraInput();
+    const nowMs = performance.now();
+    const hasMoveInput = moveState.forward || moveState.backward || moveState.left || moveState.right;
+    const idleTooLong = nowMs - lastCameraInputMs > autoOrbit.idleDelayMs;
+    const shouldOrbit = autoOrbit.forcedByUser || (idleTooLong && !hasMoveInput);
+
+    if (shouldOrbit) {
+      if (!autoOrbit.enabled) {
+        autoOrbit.enabled = true;
+        autoOrbit.radius = Math.max(1, Math.hypot(camera.position.x, camera.position.z));
+        autoOrbit.height = camera.position.y;
+        autoOrbit.angle = Math.atan2(camera.position.z, camera.position.x);
+      }
+      updateAutoOrbitCamera(deltaSeconds);
+    } else {
+      const moved = updateCameraPosition(deltaSeconds);
+      if (moved) noteCameraInput();
+    }
   }
 
   updateShareLink();
