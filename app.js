@@ -297,6 +297,7 @@ const boxHelper = new THREE.Box3Helper(box, 0x4c6d93);
 scene.add(boxHelper);
 
 let lastSerializedStateHex = "";
+let lastShareUrl = "";
 
 function clampInteger(value, min, max, fallback) {
   if (!Number.isFinite(value)) return fallback;
@@ -438,11 +439,22 @@ function updateShareLink() {
   const shareUrl = new URL(window.location.href);
   shareUrl.searchParams.set(SHARE_PARAM, stateHex);
   const fullUrl = shareUrl.toString();
+  lastShareUrl = fullUrl;
 
   shareLink.href = fullUrl;
   shareLink.textContent = "share";
-  history.replaceState(null, "", shareUrl);
 }
+
+shareLink?.addEventListener("click", async (event) => {
+  event.preventDefault();
+  if (!lastShareUrl) return;
+
+  try {
+    await navigator.clipboard.writeText(lastShareUrl);
+  } catch {
+    window.prompt("Copy share URL:", lastShareUrl);
+  }
+});
 
 function loadPersistedSettings() {
   try {

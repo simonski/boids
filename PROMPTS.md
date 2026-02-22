@@ -118,3 +118,24 @@ the birds are quite "Straight line" flyers - can you upat ethem to be more along
 make the birds much brighter - I canot see them unless I zom right in
 
 ```
+
+-----
+
+```bash
+33.
+As the user modifies settings, navigates/zooms in/out and rotates, encode the settings (birds, size, position) to a hex value which is rendered in a "share" link bottom-right.  This link should be unique - which is the hex value is the configuration setting of all the values the user can change.  It shoudl be shareable as the full URL which then "sets" all the settings to this situatio - menaing a user can create a cool position or scenario and then share it.
+
+34.
+SPACE should toggle the rotating camera on/off
+
+35. 
+The share link should just be "share" - dont show the hex value.  
+
+36.
+The share link should just be a single link: "share" - dont show the hex value and dont show two words - just the link itself.
+
+37.
+The title and URL in the website keep chanigng to reflect the share ID. I don't want to "see" the share ID changing; hide it so that the share link is valid, but onceit is clicked on it does NOT change in the URL or search bar.
+
+38.
+Create a new branch, 2d 0 introuce a V keystroke to switch betwen 2d and 3d.   Ease in and animate between 2d and 3d views.   The 2d should zoom out show the entre x/y to the window size, going back to 3d should revert to teh original 3d view.
