@@ -138,4 +138,10 @@ The share link should just be a single link: "share" - dont show the hex value a
 The title and URL in the website keep chanigng to reflect the share ID. I don't want to "see" the share ID changing; hide it so that the share link is valid, but onceit is clicked on it does NOT change in the URL or search bar.
 
 38.
+Clicking on the share link
+    - should show a popup "share link copied to clipboard"
+    - shoudl copy the link tothe clipboard so the user can paste to a friend or themselves
+
+
+39.
 Create a new branch, 2d 0 introuce a V keystroke to switch betwen 2d and 3d.   Ease in and animate between 2d and 3d views.   The 2d should zoom out show the entre x/y to the window size, going back to 3d should revert to teh original 3d view.
